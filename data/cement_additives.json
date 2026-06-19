@@ -1,0 +1,33 @@
+{
+  "_comment": "Starter cement additive lookup table. Expand this in Step 6 with real industry data (e.g., Halliburton/Schlumberger technical references). Temperatures in Celsius (BHT = Bottom Hole Temperature).",
+  "additives": [
+    {
+      "temp_range_c": [0, 50],
+      "additive": "Calcium Chloride (Accelerator)",
+      "function": "Accelerate setting time in low-temperature shallow wells",
+      "typical_dosage_percent": "2-4% BWOC",
+      "estimated_pump_time_min": 120
+    },
+    {
+      "temp_range_c": [50, 90],
+      "additive": "Standard Class G Cement (no retarder needed)",
+      "function": "Normal setting for moderate depth/temperature wells",
+      "typical_dosage_percent": "N/A",
+      "estimated_pump_time_min": 180
+    },
+    {
+      "temp_range_c": [90, 150],
+      "additive": "Lignosulfonate Retarder",
+      "function": "Extend pump time in deeper, hotter wells",
+      "typical_dosage_percent": "0.3-1.0% BWOC",
+      "estimated_pump_time_min": 240
+    },
+    {
+      "temp_range_c": [150, 250],
+      "additive": "HTHP Retarder (e.g., synthetic copolymer)",
+      "function": "Prevent flash-set in high temperature/high pressure wells",
+      "typical_dosage_percent": "0.5-2.0% BWOC",
+      "estimated_pump_time_min": 300
+    }
+  ]
+}

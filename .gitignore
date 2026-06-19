@@ -1,0 +1,27 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Output files (generated reports — keep folder, ignore generated content)
+reports/sample_output/*.pdf
+
+# Test cache
+.pytest_cache/
+*.egg-info/
