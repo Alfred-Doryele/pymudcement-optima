@@ -116,17 +116,112 @@ def test_safe_mud_window_rejects_negative_inputs():
 
 
 # ---------------------------------------------------------------------------
-# Step 3 placeholders (not yet implemented)
+# Step 3: calculate_shear_stress()
 # ---------------------------------------------------------------------------
 
-def test_shear_stress_not_yet_implemented():
-    with pytest.raises(NotImplementedError):
-        mud_engine.calculate_shear_stress(5, 0.02, 100)
+def test_shear_stress_hand_calculation():
+    """
+    Hand calculation reference (cite this in your technical report):
+
+        YP    = 5 Pa
+        PV    = 0.02 Pa.s
+        gamma = 100 s^-1
+
+        tau = YP + PV * gamma
+            = 5 + (0.02 * 100)
+            = 5 + 2
+            = 7.0 Pa
+    """
+    result = mud_engine.calculate_shear_stress(5, 0.02, 100)
+    assert result == pytest.approx(7.0, rel=1e-9)
 
 
-def test_parse_mud_report_not_yet_implemented():
-    with pytest.raises(NotImplementedError):
-        mud_engine.parse_mud_report({"PV": 20, "YP": 15})
+def test_shear_stress_zero_shear_rate_equals_yield_point():
+    """At zero shear rate, shear stress should equal the yield point exactly."""
+    result = mud_engine.calculate_shear_stress(5, 0.02, 0)
+    assert result == pytest.approx(5.0)
+
+
+def test_shear_stress_rejects_negative_yield_point():
+    with pytest.raises(ValueError):
+        mud_engine.calculate_shear_stress(-5, 0.02, 100)
+
+
+def test_shear_stress_rejects_negative_viscosity():
+    with pytest.raises(ValueError):
+        mud_engine.calculate_shear_stress(5, -0.02, 100)
+
+
+def test_shear_stress_rejects_negative_shear_rate():
+    with pytest.raises(ValueError):
+        mud_engine.calculate_shear_stress(5, 0.02, -10)
+
+
+# ---------------------------------------------------------------------------
+# Step 3: parse_mud_report()
+# ---------------------------------------------------------------------------
+
+def test_parse_mud_report_unit_conversion():
+    """
+    Hand calculation reference:
+
+        PV = 20 cP   -> 20 * 0.001  = 0.02 Pa.s
+        YP = 15 lb/100ft^2 -> 15 * 0.4788 = 7.182 Pa
+    """
+    result = mud_engine.parse_mud_report({"PV": 20, "YP": 15, "mud_weight": 1250})
+    assert result["PV_pa_s"] == pytest.approx(0.02, rel=1e-9)
+    assert result["YP_pa"] == pytest.approx(7.182, rel=1e-6)
+    assert result["mud_weight_kg_m3"] == 1250
+
+
+def test_parse_mud_report_classifies_normal_fluid():
+    """YP/PV ratio of 0.75 (15/20) falls in the 'Normal Drilling Fluid' band."""
+    result = mud_engine.parse_mud_report({"PV": 20, "YP": 15})
+    assert result["fluid_type"] == "Normal Drilling Fluid"
+
+
+def test_parse_mud_report_classifies_highly_shear_thinning():
+    """YP/PV ratio > 1.0 (25/20 = 1.25) -> highly shear-thinning."""
+    result = mud_engine.parse_mud_report({"PV": 20, "YP": 25})
+    assert result["fluid_type"] == "Highly Shear-Thinning (good hole cleaning)"
+
+
+def test_parse_mud_report_classifies_low_gel_strength():
+    """YP/PV ratio < 0.5 (5/20 = 0.25) -> low gel strength warning."""
+    result = mud_engine.parse_mud_report({"PV": 20, "YP": 5})
+    assert result["fluid_type"] == "Low Gel Strength (review hole cleaning capacity)"
+
+
+def test_parse_mud_report_handles_zero_pv():
+    """PV = 0 must not raise a ZeroDivisionError; should return 'Undefined'."""
+    result = mud_engine.parse_mud_report({"PV": 0, "YP": 10})
+    assert result["fluid_type"] == "Undefined (PV is zero)"
+
+
+def test_parse_mud_report_mud_weight_optional():
+    """mud_weight is optional; should be None if not provided."""
+    result = mud_engine.parse_mud_report({"PV": 20, "YP": 15})
+    assert result["mud_weight_kg_m3"] is None
+
+
+def test_parse_mud_report_rejects_missing_pv():
+    with pytest.raises(ValueError):
+        mud_engine.parse_mud_report({"YP": 15})
+
+
+def test_parse_mud_report_rejects_missing_yp():
+    with pytest.raises(ValueError):
+        mud_engine.parse_mud_report({"PV": 20})
+
+
+def test_parse_mud_report_rejects_negative_pv():
+    with pytest.raises(ValueError):
+        mud_engine.parse_mud_report({"PV": -5, "YP": 15})
+
+
+def test_parse_mud_report_rejects_negative_yp():
+    with pytest.raises(ValueError):
+        mud_engine.parse_mud_report({"PV": 20, "YP": -5})
 
 
 # TODO (Step 4): test_annular_pressure_drop()

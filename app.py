@@ -19,7 +19,7 @@ Course:     PENG 258 - Drilling Engineering 1
 
 import streamlit as st
 
-# NOTE: more imports will be added as Steps 3-7 are implemented.
+# NOTE: more imports will be added as Steps 4-7 are implemented.
 from modules import mud_engine
 
 st.set_page_config(
@@ -52,10 +52,10 @@ if page == "Home":
         This application automates drilling fluid design and primary cementing
         engineering calculations, in line with SPE industry competencies.
 
-        Use the sidebar to navigate between modules. Each module will be built
-        out progressively in Steps 2-7 of the project plan.
+        Use the sidebar to navigate between modules.
 
-        **Status:** 🚧 Scaffold only — backend logic not yet implemented (Step 1 complete).
+        **Status:** ✅ Mud Design module complete (Steps 1-3). Cementing &
+        hydraulics modules in progress.
         """
     )
 
@@ -97,6 +97,35 @@ elif page == "Mud Design":
             m1, m2 = st.columns(2)
             m1.metric("Margin above Pore Pressure", f"{window_result['margin_to_pore_kg_m3']:.1f} kg/m³")
             m2.metric("Margin below Fracture Gradient", f"{window_result['margin_to_fracture_kg_m3']:.1f} kg/m³")
+
+        except ValueError as e:
+            st.error(f"Input error: {e}")
+
+    st.divider()
+    st.subheader("Rheology Analysis (Mud Report)")
+
+    col3, col4, col5 = st.columns(3)
+    with col3:
+        pv_cp = st.number_input("Plastic Viscosity, PV (cP)", min_value=0.0, value=20.0, step=1.0)
+    with col4:
+        yp_lb = st.number_input("Yield Point, YP (lb/100ft²)", min_value=0.0, value=15.0, step=1.0)
+    with col5:
+        shear_rate = st.number_input("Shear Rate, γ (s⁻¹)", min_value=0.0, value=100.0, step=10.0)
+
+    if st.button("Analyze Rheology"):
+        try:
+            report = mud_engine.parse_mud_report({"PV": pv_cp, "YP": yp_lb})
+
+            r1, r2, r3 = st.columns(3)
+            r1.metric("PV (converted)", f"{report['PV_pa_s']:.4f} Pa·s")
+            r2.metric("YP (converted)", f"{report['YP_pa']:.3f} Pa")
+
+            tau = mud_engine.calculate_shear_stress(
+                report["YP_pa"], report["PV_pa_s"], shear_rate
+            )
+            r3.metric("Shear Stress, τ", f"{tau:.3f} Pa")
+
+            st.info(f"**Fluid Classification:** {report['fluid_type']}")
 
         except ValueError as e:
             st.error(f"Input error: {e}")
