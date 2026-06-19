@@ -24,45 +24,154 @@ def calculate_hydrostatic_pressure(mud_density_kg_m3: float, tvd_m: float) -> fl
     Parameters
     ----------
     mud_density_kg_m3 : float
-        Mud density in kg/m^3.
+        Mud density in kg/m^3. Must be > 0.
     tvd_m : float
-        True Vertical Depth in metres.
+        True Vertical Depth in metres. Must be >= 0.
 
     Returns
     -------
     float
         Hydrostatic pressure in Pascals (Pa).
+
+    Raises
+    ------
+    ValueError
+        If mud_density_kg_m3 <= 0 or tvd_m < 0.
+
+    Example
+    -------
+    >>> calculate_hydrostatic_pressure(1200, 3000)
+    35316000.0
     """
-    # TODO (Step 2): implement and validate against hand calculation
-    raise NotImplementedError("Implement in Step 2")
+    if mud_density_kg_m3 <= 0:
+        raise ValueError("Mud density must be a positive number (kg/m^3).")
+    if tvd_m < 0:
+        raise ValueError("TVD cannot be negative.")
+
+    p_hyd_pa = mud_density_kg_m3 * GRAVITY * tvd_m
+    return p_hyd_pa
 
 
 def check_safe_mud_window(mud_density_kg_m3: float,
-                           pore_pressure_gradient: float,
-                           fracture_gradient: float) -> dict:
+                           pore_pressure_gradient_kg_m3: float,
+                           fracture_gradient_kg_m3: float,
+                           safety_margin_kg_m3: float = 30.0) -> dict:
     """
     Check whether a proposed mud weight falls within the safe operating
-    window (i.e. above pore pressure, below fracture gradient).
+    window, i.e. heavy enough to balance pore pressure (avoid a kick/
+    well-control event) but light enough to stay below the fracture
+    gradient (avoid lost circulation / formation breakdown).
+
+    All three density-like inputs are expressed as Equivalent Mud Weight
+    (EMW) in kg/m^3, which is the standard way pore pressure and fracture
+    gradients are compared against mud weight in drilling engineering.
 
     Parameters
     ----------
     mud_density_kg_m3 : float
-        Proposed mud density.
-    pore_pressure_gradient : float
-        Formation pore pressure gradient (same units as mud density equivalent).
-    fracture_gradient : float
-        Formation fracture gradient.
+        Proposed/actual mud density (kg/m^3).
+    pore_pressure_gradient_kg_m3 : float
+        Formation pore pressure expressed as Equivalent Mud Weight (kg/m^3).
+    fracture_gradient_kg_m3 : float
+        Formation fracture pressure expressed as Equivalent Mud Weight (kg/m^3).
+    safety_margin_kg_m3 : float, optional
+        Recommended trip/connection safety margin above pore pressure
+        (industry rule of thumb, default 30 kg/m^3 ~ 0.25 ppg).
 
     Returns
     -------
     dict
         {
             "is_safe": bool,
-            "message": str
+            "status": str,          # "UNDERBALANCED" | "OVERBALANCED_RISK" | "SAFE"
+            "message": str,
+            "margin_to_pore_kg_m3": float,
+            "margin_to_fracture_kg_m3": float
         }
+
+    Raises
+    ------
+    ValueError
+        If pore_pressure_gradient_kg_m3 >= fracture_gradient_kg_m3
+        (a physically inconsistent/invalid formation window), or if any
+        density value is <= 0.
+
+    Example
+    -------
+    >>> check_safe_mud_window(1250, 1150, 1450)["is_safe"]
+    True
+    >>> check_safe_mud_window(1100, 1150, 1450)["is_safe"]
+    False
     """
-    # TODO (Step 2): implement safety window logic + warning messages
-    raise NotImplementedError("Implement in Step 2")
+    for name, value in [
+        ("mud_density_kg_m3", mud_density_kg_m3),
+        ("pore_pressure_gradient_kg_m3", pore_pressure_gradient_kg_m3),
+        ("fracture_gradient_kg_m3", fracture_gradient_kg_m3),
+    ]:
+        if value <= 0:
+            raise ValueError(f"{name} must be a positive number.")
+
+    if pore_pressure_gradient_kg_m3 >= fracture_gradient_kg_m3:
+        raise ValueError(
+            "Invalid formation window: pore pressure gradient must be "
+            "less than fracture gradient."
+        )
+
+    margin_to_pore = mud_density_kg_m3 - pore_pressure_gradient_kg_m3
+    margin_to_fracture = fracture_gradient_kg_m3 - mud_density_kg_m3
+
+    if mud_density_kg_m3 < pore_pressure_gradient_kg_m3:
+        return {
+            "is_safe": False,
+            "status": "UNDERBALANCED",
+            "message": (
+                f"DANGER: Mud weight ({mud_density_kg_m3:.1f} kg/m^3) is below "
+                f"pore pressure ({pore_pressure_gradient_kg_m3:.1f} kg/m^3). "
+                f"Risk of a well-control kick. Increase mud weight immediately."
+            ),
+            "margin_to_pore_kg_m3": margin_to_pore,
+            "margin_to_fracture_kg_m3": margin_to_fracture,
+        }
+
+    if mud_density_kg_m3 > fracture_gradient_kg_m3:
+        return {
+            "is_safe": False,
+            "status": "OVERBALANCED_RISK",
+            "message": (
+                f"DANGER: Mud weight ({mud_density_kg_m3:.1f} kg/m^3) exceeds "
+                f"fracture gradient ({fracture_gradient_kg_m3:.1f} kg/m^3). "
+                f"Risk of formation breakdown and lost circulation. "
+                f"Reduce mud weight immediately."
+            ),
+            "margin_to_pore_kg_m3": margin_to_pore,
+            "margin_to_fracture_kg_m3": margin_to_fracture,
+        }
+
+    if margin_to_pore < safety_margin_kg_m3:
+        return {
+            "is_safe": True,
+            "status": "OVERBALANCED_RISK",
+            "message": (
+                f"CAUTION: Mud weight is within the safe window but the trip "
+                f"margin above pore pressure ({margin_to_pore:.1f} kg/m^3) is "
+                f"below the recommended {safety_margin_kg_m3:.1f} kg/m^3 safety "
+                f"margin. Consider increasing mud weight slightly."
+            ),
+            "margin_to_pore_kg_m3": margin_to_pore,
+            "margin_to_fracture_kg_m3": margin_to_fracture,
+        }
+
+    return {
+        "is_safe": True,
+        "status": "SAFE",
+        "message": (
+            f"SAFE: Mud weight ({mud_density_kg_m3:.1f} kg/m^3) is within the "
+            f"operating window [{pore_pressure_gradient_kg_m3:.1f}, "
+            f"{fracture_gradient_kg_m3:.1f}] kg/m^3 with adequate margin."
+        ),
+        "margin_to_pore_kg_m3": margin_to_pore,
+        "margin_to_fracture_kg_m3": margin_to_fracture,
+    }
 
 
 def calculate_shear_stress(yield_point_pa: float,
