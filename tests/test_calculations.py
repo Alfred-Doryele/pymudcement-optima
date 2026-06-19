@@ -12,7 +12,7 @@ evidence for the "Mathematical Validation" section of your technical report.
 """
 
 import pytest
-from modules import mud_engine
+from modules import mud_engine, hydraulics
 
 
 # ---------------------------------------------------------------------------
@@ -221,11 +221,213 @@ def test_parse_mud_report_rejects_negative_pv():
 
 def test_parse_mud_report_rejects_negative_yp():
     with pytest.raises(ValueError):
-        mud_engine.parse_mud_report({"PV": 20, "YP": -5})
+        mud_engine.parse_mud_report({"PV": 10, "YP": -5})
 
 
-# TODO (Step 4): test_annular_pressure_drop()
-# TODO (Step 4): test_ecd_calculation()
+# ---------------------------------------------------------------------------
+# Step 4: calculate_annular_velocity()
+# ---------------------------------------------------------------------------
+
+def test_annular_velocity_hand_calculation():
+    """
+    Hand calculation reference:
+
+        Q  = 0.02 m^3/s
+        Dh = 0.2159 m (8.5 in hole)
+        Dp = 0.127 m  (5 in pipe OD)
+
+        A = (pi/4) * (Dh^2 - Dp^2)
+          = (pi/4) * (0.2159^2 - 0.127^2)
+          = 0.023942 m^2
+
+        v = Q / A = 0.02 / 0.023942 = 0.83535 m/s
+    """
+    v = hydraulics.calculate_annular_velocity(0.02, 0.2159, 0.127)
+    assert v == pytest.approx(0.83535, rel=1e-3)
+
+
+def test_annular_velocity_rejects_hole_smaller_than_pipe():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_annular_velocity(0.01, 0.1, 0.2)
+
+
+def test_annular_velocity_rejects_negative_flow_rate():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_annular_velocity(-0.01, 0.2, 0.1)
+
+
+def test_annular_velocity_rejects_zero_pipe_od():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_annular_velocity(0.01, 0.2, 0)
+
+
+# ---------------------------------------------------------------------------
+# Step 4: calculate_annular_pressure_drop()
+# ---------------------------------------------------------------------------
+
+def test_annular_pressure_drop_hand_calculation():
+    """
+    Hand calculation reference (laminar Bingham-Plastic annular flow):
+
+        PV = 0.02 Pa.s, YP = 7.182 Pa, Q = 0.005 m^3/s
+        Dh = 0.2159 m, Dp = 0.127 m, L = 3000 m
+
+        A = 0.023942 m^2  ->  v = Q/A = 0.20884 m/s
+        gap = Dh - Dp = 0.0889 m
+
+        dP_viscous = 12*PV*v*L / gap^2
+                   = 12*0.02*0.20884*3000 / 0.0889^2
+                   ~ 18,962 Pa  (varies with rounding)
+
+        dP_yield = 2*YP*L / gap
+                 = 2*7.182*3000 / 0.0889
+                 ~ 484,724 Pa
+
+        Total dP = dP_viscous + dP_yield  ~ 503,750 Pa
+    """
+    result = hydraulics.calculate_annular_pressure_drop(
+        plastic_viscosity_pa_s=0.02,
+        yield_point_pa=7.182,
+        flow_rate_m3_s=0.005,
+        hole_diameter_m=0.2159,
+        pipe_od_m=0.127,
+        length_m=3000,
+    )
+    assert result["pressure_drop_pa"] == pytest.approx(503750, rel=1e-3)
+
+
+def test_annular_pressure_drop_flags_laminar_regime():
+    """At low flow rate (0.005 m^3/s), Reynolds Number should fall below
+    the critical threshold and be classified LAMINAR."""
+    result = hydraulics.calculate_annular_pressure_drop(
+        plastic_viscosity_pa_s=0.02,
+        yield_point_pa=7.182,
+        flow_rate_m3_s=0.005,
+        hole_diameter_m=0.2159,
+        pipe_od_m=0.127,
+        length_m=3000,
+        mud_density_kg_m3=1250,
+    )
+    assert result["flow_regime"] == "LAMINAR"
+    assert result["warning"] is None
+
+
+def test_annular_pressure_drop_flags_turbulent_regime():
+    """At a higher flow rate (0.02 m^3/s), Reynolds Number should exceed
+    the critical threshold and be classified TURBULENT, with a warning."""
+    result = hydraulics.calculate_annular_pressure_drop(
+        plastic_viscosity_pa_s=0.02,
+        yield_point_pa=7.182,
+        flow_rate_m3_s=0.02,
+        hole_diameter_m=0.2159,
+        pipe_od_m=0.127,
+        length_m=3000,
+        mud_density_kg_m3=1250,
+    )
+    assert result["flow_regime"] == "TURBULENT"
+    assert result["warning"] is not None
+
+
+def test_annular_pressure_drop_regime_unknown_without_density():
+    """If mud_density_kg_m3 is not supplied, flow regime cannot be assessed."""
+    result = hydraulics.calculate_annular_pressure_drop(
+        plastic_viscosity_pa_s=0.02,
+        yield_point_pa=7.182,
+        flow_rate_m3_s=0.005,
+        hole_diameter_m=0.2159,
+        pipe_od_m=0.127,
+        length_m=3000,
+    )
+    assert result["reynolds_number"] is None
+    assert "UNKNOWN" in result["flow_regime"]
+
+
+def test_annular_pressure_drop_handles_zero_pv_without_crashing():
+    """PV = 0 must not raise a ZeroDivisionError in the Reynolds calculation."""
+    result = hydraulics.calculate_annular_pressure_drop(
+        plastic_viscosity_pa_s=0,
+        yield_point_pa=7,
+        flow_rate_m3_s=0.01,
+        hole_diameter_m=0.2,
+        pipe_od_m=0.1,
+        length_m=100,
+        mud_density_kg_m3=1250,
+    )
+    assert result["reynolds_number"] == float("inf")
+    assert result["flow_regime"] == "TURBULENT"
+
+
+def test_annular_pressure_drop_rejects_negative_pv():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_annular_pressure_drop(-0.02, 7, 0.01, 0.2, 0.1, 100)
+
+
+def test_annular_pressure_drop_rejects_negative_yp():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_annular_pressure_drop(0.02, -7, 0.01, 0.2, 0.1, 100)
+
+
+def test_annular_pressure_drop_rejects_negative_length():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_annular_pressure_drop(0.02, 7, 0.01, 0.2, 0.1, -100)
+
+
+# ---------------------------------------------------------------------------
+# Step 4: calculate_ecd()
+# ---------------------------------------------------------------------------
+
+def test_ecd_hand_calculation():
+    """
+    Hand calculation reference:
+
+        mud_weight = 1250 kg/m^3
+        dP         = 503750 Pa  (from laminar pressure drop test above)
+        TVD        = 3000 m
+        g          = 9.81 m/s^2
+
+        ECD = mud_weight + dP/(g*TVD)
+            = 1250 + 503750/(9.81*3000)
+            = 1250 + 17.12
+            = 1267.12 kg/m^3
+    """
+    result = hydraulics.calculate_ecd(1250, 503750, 3000)
+    assert result["ecd_kg_m3"] == pytest.approx(1267.12, rel=1e-3)
+
+
+def test_ecd_flags_exceeding_fracture_gradient():
+    """A very high pressure drop should push ECD above the fracture gradient."""
+    result = hydraulics.calculate_ecd(1250, 50_000_000, 3000, fracture_gradient_kg_m3=1450)
+    assert result["exceeds_fracture_gradient"] is True
+    assert "WARNING" in result["message"]
+
+
+def test_ecd_within_fracture_gradient():
+    result = hydraulics.calculate_ecd(1250, 503750, 3000, fracture_gradient_kg_m3=1450)
+    assert result["exceeds_fracture_gradient"] is False
+    assert "OK" in result["message"]
+
+
+def test_ecd_fracture_gradient_optional():
+    """Without a fracture gradient supplied, exceeds_fracture_gradient is None."""
+    result = hydraulics.calculate_ecd(1250, 503750, 3000)
+    assert result["exceeds_fracture_gradient"] is None
+
+
+def test_ecd_rejects_zero_mud_weight():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_ecd(0, 500000, 3000)
+
+
+def test_ecd_rejects_negative_pressure_drop():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_ecd(1250, -500000, 3000)
+
+
+def test_ecd_rejects_zero_tvd():
+    with pytest.raises(ValueError):
+        hydraulics.calculate_ecd(1250, 500000, 0)
+
+
 # TODO (Step 5): test_annular_volume_matches_hand_calc()
 # TODO (Step 6): test_additive_recommendation_by_temperature()
 # TODO (Step 7): test_plug_bumping_pressure()

@@ -99,12 +99,12 @@ pytest tests/ -v
 | Module | File | Owner | Status |
 |---|---|---|---|
 | Mud Weight & Pressure Balance | `modules/mud_engine.py` | TBD | ✅ Implemented |
-| Rheology (PV/YP) | `modules/mud_engine.py` | TBD | 🚧 Scaffold |
-| Annular Hydraulics & ECD | `modules/hydraulics.py` | TBD | 🚧 Scaffold |
+| Rheology (PV/YP) | `modules/mud_engine.py` | TBD | ✅ Implemented |
+| Annular Hydraulics & ECD | `modules/hydraulics.py` | TBD | ✅ Implemented |
 | Cement Volumetrics | `modules/cement_engine.py` | TBD | 🚧 Scaffold |
 | Additive Database | `modules/cement_db.py` | TBD | 🚧 Scaffold |
 | Plug Bumping & P&A | `modules/pa_plugs.py` | TBD | 🚧 Scaffold |
-| GUI Integration | `app.py` | TBD | 🚧 Scaffold |
+| GUI Integration | `app.py` | TBD | 🚧 In progress |
 
 > Update this table as your group assigns ownership. Each member should work on their own branch and submit pull requests for review.
 
@@ -118,6 +118,12 @@ pytest tests/ -v
 **Bingham-Plastic Rheology:**
 `τ = YP + PV × γ`
 
+**Annular Pressure Drop (Laminar Bingham-Plastic):**
+`ΔP = [12·PV·v·L / gap²] + [2·YP·L / gap]`  where `gap = D_hole − D_pipe_OD`
+
+**Equivalent Circulating Density (ECD):**
+`ECD = ρ_mud + (ΔP_annular / (g × TVD))`
+
 **Annular Volume (Cementing):**
 `V_ann = (π/4) × (D_hole² − D_casing_OD²) × L × (1 + W_e)`
 
@@ -127,12 +133,12 @@ pytest tests/ -v
 
 - [x] **Step 1:** Project scaffold, GitHub repo, environment setup
 - [x] **Step 2:** Mud weight & safe window calculator
-- [ ] **Step 3:** Mud report parser & PV/YP rheology
-- [ ] **Step 4:** Annular hydraulics & ECD engine
+- [x] **Step 3:** Mud report parser & PV/YP rheology
+- [x] **Step 4:** Annular hydraulics & ECD engine
 - [ ] **Step 5:** Cement volumetrics
 - [ ] **Step 6:** Additive database & slurry design
 - [ ] **Step 7:** Plug bumping pressure & P&A module
-- [ ] **Step 8:** Streamlit GUI integration
+- [ ] **Step 8:** Streamlit GUI integration (final polish)
 - [ ] **Step 9:** Validation against benchmark data
 - [ ] **Step 10:** Final testing, demo prep, technical report
 
