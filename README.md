@@ -101,7 +101,7 @@ pytest tests/ -v
 | Mud Weight & Pressure Balance | `modules/mud_engine.py` | TBD | ✅ Implemented |
 | Rheology (PV/YP) | `modules/mud_engine.py` | TBD | ✅ Implemented |
 | Annular Hydraulics & ECD | `modules/hydraulics.py` | TBD | ✅ Implemented |
-| Cement Volumetrics | `modules/cement_engine.py` | TBD | 🚧 Scaffold |
+| Cement Volumetrics | `modules/cement_engine.py` | TBD | ✅ Implemented |
 | Additive Database | `modules/cement_db.py` | TBD | 🚧 Scaffold |
 | Plug Bumping & P&A | `modules/pa_plugs.py` | TBD | 🚧 Scaffold |
 | GUI Integration | `app.py` | TBD | 🚧 In progress |
@@ -127,6 +127,9 @@ pytest tests/ -v
 **Annular Volume (Cementing):**
 `V_ann = (π/4) × (D_hole² − D_casing_OD²) × L × (1 + W_e)`
 
+**Displacement Volume:**
+`V_disp = (π/4) × D_casing_ID² × L`
+
 ---
 
 ## 🛣️ Development Roadmap
@@ -135,7 +138,7 @@ pytest tests/ -v
 - [x] **Step 2:** Mud weight & safe window calculator
 - [x] **Step 3:** Mud report parser & PV/YP rheology
 - [x] **Step 4:** Annular hydraulics & ECD engine
-- [ ] **Step 5:** Cement volumetrics
+- [x] **Step 5:** Cement volumetrics
 - [ ] **Step 6:** Additive database & slurry design
 - [ ] **Step 7:** Plug bumping pressure & P&A module
 - [ ] **Step 8:** Streamlit GUI integration (final polish)

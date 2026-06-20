@@ -12,7 +12,7 @@ evidence for the "Mathematical Validation" section of your technical report.
 """
 
 import pytest
-from modules import mud_engine, hydraulics
+from modules import mud_engine, hydraulics, cement_engine
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +428,150 @@ def test_ecd_rejects_zero_tvd():
         hydraulics.calculate_ecd(1250, 500000, 0)
 
 
-# TODO (Step 5): test_annular_volume_matches_hand_calc()
+# ---------------------------------------------------------------------------
+# Step 5: calculate_annular_volume()
+# ---------------------------------------------------------------------------
+
+def test_annular_volume_hand_calculation():
+    """
+    Hand calculation reference (cite this in your technical report):
+
+        Dhole      = 0.31115 m  (12.25 in open hole)
+        Dcasing_OD = 0.24448 m  (9.625 in casing)
+        L          = 500 m
+        We         = 0.15 (15% excess)
+
+        V_ann = (pi/4) * (Dhole^2 - Dcasing_OD^2) * L * (1 + We)
+              = (pi/4) * (0.31115^2 - 0.24448^2) * 500 * 1.15
+              ~ 16.729 m^3
+    """
+    result = cement_engine.calculate_annular_volume(0.31115, 0.24448, 500, 0.15)
+    assert result == pytest.approx(16.729, rel=1e-3)
+
+
+def test_annular_volume_default_excess_factor():
+    """Default excess_factor of 0.15 should match an explicit 0.15 call."""
+    explicit = cement_engine.calculate_annular_volume(0.31115, 0.24448, 500, 0.15)
+    default = cement_engine.calculate_annular_volume(0.31115, 0.24448, 500)
+    assert default == pytest.approx(explicit, rel=1e-9)
+
+
+def test_annular_volume_zero_length_returns_zero():
+    result = cement_engine.calculate_annular_volume(0.3, 0.2, 0)
+    assert result == pytest.approx(0.0)
+
+
+def test_annular_volume_rejects_hole_smaller_than_casing():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_annular_volume(0.2, 0.25, 500)
+
+
+def test_annular_volume_rejects_zero_casing_od():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_annular_volume(0.3, 0, 500)
+
+
+def test_annular_volume_rejects_negative_length():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_annular_volume(0.3, 0.2, -500)
+
+
+def test_annular_volume_rejects_negative_excess_factor():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_annular_volume(0.3, 0.2, 500, -0.1)
+
+
+# ---------------------------------------------------------------------------
+# Step 5: calculate_slurry_volumes()
+# ---------------------------------------------------------------------------
+
+def test_slurry_volumes_split_sums_to_total():
+    """A 60/40 lead/tail split of a known annular volume should sum back
+    to the original total (when fractions sum to 1.0)."""
+    v_ann = 16.729
+    result = cement_engine.calculate_slurry_volumes(v_ann, 0.6, 0.4)
+    assert result["lead_volume_m3"] + result["tail_volume_m3"] == pytest.approx(v_ann, rel=1e-6)
+    assert result["unallocated_fraction"] == pytest.approx(0.0, abs=1e-9)
+    assert result["warning"] is None
+
+
+def test_slurry_volumes_hand_calculation():
+    """
+    Hand calculation reference:
+
+        V_ann = 16.729 m^3, lead = 60%, tail = 40%
+
+        lead_volume = 16.729 * 0.6 = 10.0374 m^3
+        tail_volume = 16.729 * 0.4 = 6.6916 m^3
+    """
+    result = cement_engine.calculate_slurry_volumes(16.729, 0.6, 0.4)
+    assert result["lead_volume_m3"] == pytest.approx(10.0374, rel=1e-3)
+    assert result["tail_volume_m3"] == pytest.approx(6.6916, rel=1e-3)
+
+
+def test_slurry_volumes_warns_on_over_allocation():
+    """Fractions summing above 1.0 should trigger a warning."""
+    result = cement_engine.calculate_slurry_volumes(16.729, 0.7, 0.5)
+    assert result["warning"] is not None
+    assert "WARNING" in result["warning"]
+
+
+def test_slurry_volumes_unallocated_fraction_for_partial_split():
+    """If lead+tail < 1.0 (e.g. spacer takes the rest), unallocated_fraction
+    should reflect the remainder."""
+    result = cement_engine.calculate_slurry_volumes(16.729, 0.5, 0.3)
+    assert result["unallocated_fraction"] == pytest.approx(0.2, rel=1e-6)
+    assert result["warning"] is None
+
+
+def test_slurry_volumes_rejects_negative_annular_volume():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_slurry_volumes(-5, 0.5, 0.5)
+
+
+def test_slurry_volumes_rejects_lead_fraction_above_one():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_slurry_volumes(10, 1.5, 0.5)
+
+
+def test_slurry_volumes_rejects_negative_tail_fraction():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_slurry_volumes(10, 0.5, -0.1)
+
+
+# ---------------------------------------------------------------------------
+# Step 5: calculate_displacement_volume()
+# ---------------------------------------------------------------------------
+
+def test_displacement_volume_hand_calculation():
+    """
+    Hand calculation reference:
+
+        Dcasing_ID = 0.22049 m (8.681 in)
+        L          = 3000 m
+
+        V_disp = (pi/4) * Dcasing_ID^2 * L
+               = (pi/4) * 0.22049^2 * 3000
+               ~ 114.548 m^3
+    """
+    result = cement_engine.calculate_displacement_volume(0.22049, 3000)
+    assert result == pytest.approx(114.548, rel=1e-3)
+
+
+def test_displacement_volume_zero_length_returns_zero():
+    result = cement_engine.calculate_displacement_volume(0.2, 0)
+    assert result == pytest.approx(0.0)
+
+
+def test_displacement_volume_rejects_zero_casing_id():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_displacement_volume(0, 3000)
+
+
+def test_displacement_volume_rejects_negative_length():
+    with pytest.raises(ValueError):
+        cement_engine.calculate_displacement_volume(0.2, -100)
+
+
 # TODO (Step 6): test_additive_recommendation_by_temperature()
 # TODO (Step 7): test_plug_bumping_pressure()

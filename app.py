@@ -19,8 +19,8 @@ Course:     PENG 258 - Drilling Engineering 1
 
 import streamlit as st
 
-# NOTE: more imports will be added as Steps 5-7 are implemented.
-from modules import mud_engine, hydraulics
+# NOTE: more imports will be added as Steps 6-7 are implemented.
+from modules import mud_engine, hydraulics, cement_engine
 
 st.set_page_config(
     page_title="PyMudCement-Optima",
@@ -54,8 +54,8 @@ if page == "Home":
 
         Use the sidebar to navigate between modules.
 
-        **Status:** ✅ Mud Design and Hydraulics & ECD modules complete
-        (Steps 1-4). Cementing modules in progress.
+        **Status:** ✅ Mud Design, Hydraulics & ECD, and Cementing Volumetrics
+        modules complete (Steps 1-5). Additive database and P&A modules in progress.
         """
     )
 
@@ -197,8 +197,56 @@ elif page == "Hydraulics & ECD":
 
 elif page == "Cementing Volumetrics":
     st.header("Cement Slurry & Spacer Volumes")
-    st.info("This section will be wired up in Step 5 (cement_engine.py).")
-    # TODO: build input form -> call cement_engine functions -> display results
+    st.caption("Annular cement volume, lead/tail slurry split, and displacement fluid volume.")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Hole & Casing Geometry")
+        hole_d_cem = st.number_input("Open Hole Diameter, Dh (m)", min_value=0.01, value=0.31115, step=0.001, format="%.5f")
+        casing_od = st.number_input("Casing Outer Diameter (m)", min_value=0.01, value=0.24448, step=0.001, format="%.5f")
+        casing_id = st.number_input("Casing Inner Diameter (m)", min_value=0.01, value=0.22049, step=0.001, format="%.5f")
+        cement_length = st.number_input("Cemented Interval Length, L (m)", min_value=0.0, value=500.0, step=10.0)
+
+    with col2:
+        st.subheader("Job Design Parameters")
+        excess_factor = st.number_input("Open-Hole Excess Factor, We", min_value=0.0, value=0.15, step=0.01, format="%.2f")
+        lead_fraction = st.slider("Lead Slurry Fraction", min_value=0.0, max_value=1.0, value=0.6, step=0.05)
+        tail_fraction = st.slider("Tail Slurry Fraction", min_value=0.0, max_value=1.0, value=0.4, step=0.05)
+        casing_length = st.number_input("Casing String Length (for displacement), m", min_value=0.0, value=3000.0, step=50.0)
+
+    if st.button("Calculate Cementing Volumes", type="primary"):
+        try:
+            v_ann = cement_engine.calculate_annular_volume(
+                hole_d_cem, casing_od, cement_length, excess_factor
+            )
+
+            st.subheader("Annular Cement Volume")
+            st.metric("Total Annular Volume", f"{v_ann:.3f} m³")
+
+            st.divider()
+            st.subheader("Lead / Tail Slurry Split")
+
+            slurry = cement_engine.calculate_slurry_volumes(v_ann, lead_fraction, tail_fraction)
+
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Lead Slurry Volume", f"{slurry['lead_volume_m3']:.3f} m³")
+            s2.metric("Tail Slurry Volume", f"{slurry['tail_volume_m3']:.3f} m³")
+            s3.metric("Unallocated Fraction", f"{slurry['unallocated_fraction']*100:.0f}%")
+
+            if slurry["warning"]:
+                st.error(slurry["warning"])
+            else:
+                st.success("Slurry volumes allocated within total annular volume.")
+
+            st.divider()
+            st.subheader("Displacement Fluid Volume")
+
+            v_disp = cement_engine.calculate_displacement_volume(casing_id, casing_length)
+            st.metric("Displacement Volume (inside casing)", f"{v_disp:.3f} m³")
+
+        except ValueError as e:
+            st.error(f"Input error: {e}")
 
 elif page == "Additive Recommendation":
     st.header("Cement Additive Lookup")
