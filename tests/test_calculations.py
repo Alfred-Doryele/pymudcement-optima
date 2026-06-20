@@ -12,7 +12,7 @@ evidence for the "Mathematical Validation" section of your technical report.
 """
 
 import pytest
-from modules import mud_engine, hydraulics, cement_engine
+from modules import mud_engine, hydraulics, cement_engine, cement_db
 
 
 # ---------------------------------------------------------------------------
@@ -573,5 +573,109 @@ def test_displacement_volume_rejects_negative_length():
         cement_engine.calculate_displacement_volume(0.2, -100)
 
 
-# TODO (Step 6): test_additive_recommendation_by_temperature()
+# ---------------------------------------------------------------------------
+# Step 6: load_additive_database()
+# ---------------------------------------------------------------------------
+
+def test_load_additive_database_returns_list():
+    db = cement_db.load_additive_database()
+    assert isinstance(db, list)
+    assert len(db) > 0
+
+
+def test_load_additive_database_entries_have_required_keys():
+    db = cement_db.load_additive_database()
+    required_keys = {"temp_range_c", "additive", "function",
+                      "typical_dosage_percent", "estimated_pump_time_min"}
+    for entry in db:
+        assert required_keys.issubset(entry.keys())
+
+
+def test_load_additive_database_rejects_missing_file():
+    with pytest.raises(FileNotFoundError):
+        cement_db.load_additive_database("/nonexistent/path/to/file.json")
+
+
+def test_load_additive_database_rejects_invalid_json(tmp_path):
+    bad_file = tmp_path / "bad.json"
+    bad_file.write_text("{not valid json")
+    with pytest.raises(ValueError):
+        cement_db.load_additive_database(str(bad_file))
+
+
+def test_load_additive_database_rejects_missing_additives_key(tmp_path):
+    bad_file = tmp_path / "bad.json"
+    bad_file.write_text('{"foo": "bar"}')
+    with pytest.raises(ValueError):
+        cement_db.load_additive_database(str(bad_file))
+
+
+# ---------------------------------------------------------------------------
+# Step 6: recommend_additives()
+# ---------------------------------------------------------------------------
+
+def test_recommend_additives_low_temperature_band():
+    """BHT = 25C should fall in the [0, 50) band -> Calcium Chloride accelerator."""
+    result = cement_db.recommend_additives(25)
+    assert result["recommended_additive"] == "Calcium Chloride (Accelerator)"
+    assert result["matched_temp_range_c"] == [0, 50]
+
+
+def test_recommend_additives_mid_temperature_band():
+    """BHT = 110C should fall in the [90, 150) band -> Lignosulfonate Retarder."""
+    result = cement_db.recommend_additives(110)
+    assert result["recommended_additive"] == "Lignosulfonate Retarder"
+
+
+def test_recommend_additives_high_temperature_band():
+    """BHT = 200C should fall in the [150, 250] band -> HTHP Retarder."""
+    result = cement_db.recommend_additives(200)
+    assert result["recommended_additive"] == "HTHP Retarder (e.g., synthetic copolymer)"
+
+
+def test_recommend_additives_lower_boundary_goes_to_upper_band():
+    """BHT exactly at a boundary (50C) should go to the band starting at
+    50, not the band ending at 50 (i.e. bands are [low, high))."""
+    result = cement_db.recommend_additives(50)
+    assert result["matched_temp_range_c"] == [50, 90]
+
+
+def test_recommend_additives_at_absolute_upper_limit():
+    """BHT exactly at the database's highest value (250C) should still
+    match the last band (inclusive at the very top)."""
+    result = cement_db.recommend_additives(250)
+    assert result["recommended_additive"] == "HTHP Retarder (e.g., synthetic copolymer)"
+    assert "WARNING" not in result["notes"]
+
+
+def test_recommend_additives_flags_extreme_temperature_beyond_database():
+    """
+    Stress-test scenario (matches syllabus requirement: 'inputting ...
+    extreme bottom-hole temperatures to verify the software's warning
+    logic'). BHT = 300C exceeds the highest band (250C) and must return
+    a clear warning rather than silently returning a value or crashing.
+    """
+    result = cement_db.recommend_additives(300)
+    assert result["recommended_additive"] == "HTHP Retarder (e.g., synthetic copolymer)"
+    assert "WARNING" in result["notes"]
+
+
+def test_recommend_additives_rejects_negative_temperature():
+    with pytest.raises(ValueError):
+        cement_db.recommend_additives(-10)
+
+
+def test_recommend_additives_rejects_empty_database():
+    with pytest.raises(ValueError):
+        cement_db.recommend_additives(50, database=[])
+
+
+def test_recommend_additives_accepts_preloaded_database():
+    """Passing a pre-loaded database should avoid re-reading the file
+    and produce the same result as the default auto-load."""
+    db = cement_db.load_additive_database()
+    result = cement_db.recommend_additives(100, database=db)
+    assert result["recommended_additive"] == "Lignosulfonate Retarder"
+
+
 # TODO (Step 7): test_plug_bumping_pressure()

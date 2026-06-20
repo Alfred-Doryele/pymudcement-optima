@@ -19,8 +19,8 @@ Course:     PENG 258 - Drilling Engineering 1
 
 import streamlit as st
 
-# NOTE: more imports will be added as Steps 6-7 are implemented.
-from modules import mud_engine, hydraulics, cement_engine
+# NOTE: more imports will be added as Step 7 is implemented.
+from modules import mud_engine, hydraulics, cement_engine, cement_db
 
 st.set_page_config(
     page_title="PyMudCement-Optima",
@@ -54,8 +54,8 @@ if page == "Home":
 
         Use the sidebar to navigate between modules.
 
-        **Status:** ✅ Mud Design, Hydraulics & ECD, and Cementing Volumetrics
-        modules complete (Steps 1-5). Additive database and P&A modules in progress.
+        **Status:** ✅ Mud Design, Hydraulics & ECD, Cementing Volumetrics, and
+        Additive Recommendation modules complete (Steps 1-6). P&A module in progress.
         """
     )
 
@@ -250,8 +250,35 @@ elif page == "Cementing Volumetrics":
 
 elif page == "Additive Recommendation":
     st.header("Cement Additive Lookup")
-    st.info("This section will be wired up in Step 6 (cement_db.py).")
-    # TODO: build input form -> call cement_db functions -> display results
+    st.caption("Recommends a cement additive and estimated pump time based on Bottom Hole Temperature.")
+
+    bht = st.number_input("Bottom Hole Temperature, BHT (°C)", min_value=0.0, value=110.0, step=5.0)
+
+    if st.button("Get Additive Recommendation", type="primary"):
+        try:
+            rec = cement_db.recommend_additives(bht)
+
+            st.subheader("Recommendation")
+            st.metric("Recommended Additive", rec["recommended_additive"])
+
+            a1, a2 = st.columns(2)
+            a1.metric("Estimated Pump Time", f"{rec['estimated_pump_time_min']:.0f} min")
+            a2.metric("Typical Dosage", rec["typical_dosage_percent"])
+
+            st.info(f"**Function:** {rec['function']}")
+            st.caption(f"Matched temperature range: {rec['matched_temp_range_c']} °C")
+
+            if "WARNING" in rec["notes"]:
+                st.error(rec["notes"])
+            else:
+                st.success(rec["notes"])
+
+            with st.expander("View full additive database"):
+                db = cement_db.load_additive_database()
+                st.table(db)
+
+        except ValueError as e:
+            st.error(f"Input error: {e}")
 
 elif page == "Plug & P&A Design":
     st.header("Plug Bumping Pressure & P&A Design")

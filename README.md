@@ -102,7 +102,7 @@ pytest tests/ -v
 | Rheology (PV/YP) | `modules/mud_engine.py` | TBD | ✅ Implemented |
 | Annular Hydraulics & ECD | `modules/hydraulics.py` | TBD | ✅ Implemented |
 | Cement Volumetrics | `modules/cement_engine.py` | TBD | ✅ Implemented |
-| Additive Database | `modules/cement_db.py` | TBD | 🚧 Scaffold |
+| Additive Database | `modules/cement_db.py` | TBD | ✅ Implemented |
 | Plug Bumping & P&A | `modules/pa_plugs.py` | TBD | 🚧 Scaffold |
 | GUI Integration | `app.py` | TBD | 🚧 In progress |
 
@@ -139,7 +139,7 @@ pytest tests/ -v
 - [x] **Step 3:** Mud report parser & PV/YP rheology
 - [x] **Step 4:** Annular hydraulics & ECD engine
 - [x] **Step 5:** Cement volumetrics
-- [ ] **Step 6:** Additive database & slurry design
+- [x] **Step 6:** Additive database & slurry design
 - [ ] **Step 7:** Plug bumping pressure & P&A module
 - [ ] **Step 8:** Streamlit GUI integration (final polish)
 - [ ] **Step 9:** Validation against benchmark data
