@@ -103,8 +103,8 @@ pytest tests/ -v
 | Annular Hydraulics & ECD | `modules/hydraulics.py` | TBD | ✅ Implemented |
 | Cement Volumetrics | `modules/cement_engine.py` | TBD | ✅ Implemented |
 | Additive Database | `modules/cement_db.py` | TBD | ✅ Implemented |
-| Plug Bumping & P&A | `modules/pa_plugs.py` | TBD | 🚧 Scaffold |
-| GUI Integration | `app.py` | TBD | 🚧 In progress |
+| Plug Bumping & P&A | `modules/pa_plugs.py` | TBD | ✅ Implemented |
+| GUI Integration | `app.py` | TBD | ✅ All modules wired |
 
 > Update this table as your group assigns ownership. Each member should work on their own branch and submit pull requests for review.
 
@@ -130,6 +130,9 @@ pytest tests/ -v
 **Displacement Volume:**
 `V_disp = (π/4) × D_casing_ID² × L`
 
+**Plug Bumping Pressure:**
+`P_bump = P_displacement + ΔP_friction + (ρ_mud − ρ_displaced) × g × TVD`
+
 ---
 
 ## 🛣️ Development Roadmap
@@ -140,7 +143,7 @@ pytest tests/ -v
 - [x] **Step 4:** Annular hydraulics & ECD engine
 - [x] **Step 5:** Cement volumetrics
 - [x] **Step 6:** Additive database & slurry design
-- [ ] **Step 7:** Plug bumping pressure & P&A module
+- [x] **Step 7:** Plug bumping pressure & P&A module
 - [ ] **Step 8:** Streamlit GUI integration (final polish)
 - [ ] **Step 9:** Validation against benchmark data
 - [ ] **Step 10:** Final testing, demo prep, technical report

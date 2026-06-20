@@ -12,7 +12,7 @@ evidence for the "Mathematical Validation" section of your technical report.
 """
 
 import pytest
-from modules import mud_engine, hydraulics, cement_engine, cement_db
+from modules import mud_engine, hydraulics, cement_engine, cement_db, pa_plugs
 
 
 # ---------------------------------------------------------------------------
@@ -426,8 +426,6 @@ def test_ecd_rejects_negative_pressure_drop():
 def test_ecd_rejects_zero_tvd():
     with pytest.raises(ValueError):
         hydraulics.calculate_ecd(1250, 500000, 0)
-
-
 # ---------------------------------------------------------------------------
 # Step 5: calculate_annular_volume()
 # ---------------------------------------------------------------------------
@@ -678,4 +676,184 @@ def test_recommend_additives_accepts_preloaded_database():
     assert result["recommended_additive"] == "Lignosulfonate Retarder"
 
 
-# TODO (Step 7): test_plug_bumping_pressure()
+# ---------------------------------------------------------------------------
+# Step 7: calculate_plug_bumping_pressure()
+# ---------------------------------------------------------------------------
+
+def test_plug_bumping_pressure_hand_calculation():
+    """
+    Hand calculation reference (cite this in your technical report):
+
+        P_displacement = 2,000,000 Pa
+        P_friction     = 500,000 Pa
+        rho_mud        = 1900 kg/m^3 (heavier fluid inside casing)
+        rho_displaced  = 1250 kg/m^3 (lighter fluid pushed into annulus)
+        TVD            = 3000 m
+
+        dP_hydrostatic = (rho_mud - rho_displaced) * g * TVD
+                       = (1900 - 1250) * 9.81 * 3000
+                       = 650 * 9.81 * 3000
+                       = 19,129,500 Pa
+
+        P_bump = P_displacement + P_friction + dP_hydrostatic
+               = 2,000,000 + 500,000 + 19,129,500
+               = 21,629,500 Pa
+    """
+    result = pa_plugs.calculate_plug_bumping_pressure(
+        displacement_pressure_pa=2_000_000,
+        friction_losses_pa=500_000,
+        mud_density_kg_m3=1900,
+        displaced_fluid_density_kg_m3=1250,
+        tvd_m=3000,
+    )
+    assert result["hydrostatic_differential_pa"] == pytest.approx(19_129_500, rel=1e-6)
+    assert result["plug_bumping_pressure_pa"] == pytest.approx(21_629_500, rel=1e-6)
+
+
+def test_plug_bumping_pressure_moderate_scenario_no_warning():
+    """A small density contrast at typical depth should not trigger the
+    high-pressure sanity warning."""
+    result = pa_plugs.calculate_plug_bumping_pressure(
+        displacement_pressure_pa=1_000_000,
+        friction_losses_pa=300_000,
+        mud_density_kg_m3=1300,
+        displaced_fluid_density_kg_m3=1250,
+        tvd_m=3000,
+    )
+    assert result["warning"] is None
+
+
+def test_plug_bumping_pressure_flags_unusually_high_result():
+    """
+    Stress-test scenario: a large density contrast at depth produces an
+    unusually high plug bumping pressure (> 20 MPa), which must be
+    flagged with a warning rather than silently accepted.
+    """
+    result = pa_plugs.calculate_plug_bumping_pressure(
+        displacement_pressure_pa=2_000_000,
+        friction_losses_pa=500_000,
+        mud_density_kg_m3=1900,
+        displaced_fluid_density_kg_m3=1250,
+        tvd_m=3000,
+    )
+    assert result["warning"] is not None
+    assert "WARNING" in result["warning"]
+
+
+def test_plug_bumping_pressure_flags_negative_result():
+    """If the displaced fluid is much heavier than the mud (unusual but
+    possible input combination), the result can go negative and must be
+    flagged rather than returned as a misleadingly 'valid' pressure."""
+    result = pa_plugs.calculate_plug_bumping_pressure(
+        displacement_pressure_pa=100_000,
+        friction_losses_pa=50_000,
+        mud_density_kg_m3=1100,
+        displaced_fluid_density_kg_m3=1900,
+        tvd_m=3000,
+    )
+    assert result["plug_bumping_pressure_pa"] < 0
+    assert result["warning"] is not None
+
+
+def test_plug_bumping_pressure_rejects_negative_displacement_pressure():
+    with pytest.raises(ValueError):
+        pa_plugs.calculate_plug_bumping_pressure(-100, 500, 1900, 1250, 3000)
+
+
+def test_plug_bumping_pressure_rejects_negative_friction_losses():
+    with pytest.raises(ValueError):
+        pa_plugs.calculate_plug_bumping_pressure(100, -500, 1900, 1250, 3000)
+
+
+def test_plug_bumping_pressure_rejects_zero_mud_density():
+    with pytest.raises(ValueError):
+        pa_plugs.calculate_plug_bumping_pressure(100, 500, 0, 1250, 3000)
+
+
+def test_plug_bumping_pressure_rejects_zero_displaced_density():
+    with pytest.raises(ValueError):
+        pa_plugs.calculate_plug_bumping_pressure(100, 500, 1900, 0, 3000)
+
+
+def test_plug_bumping_pressure_rejects_negative_tvd():
+    with pytest.raises(ValueError):
+        pa_plugs.calculate_plug_bumping_pressure(100, 500, 1900, 1250, -100)
+
+
+# ---------------------------------------------------------------------------
+# Step 7: design_pa_plug()
+# ---------------------------------------------------------------------------
+
+def test_design_pa_plug_hand_calculation():
+    """
+    Hand calculation reference:
+
+        Dhole = 0.2159 m, plug_length = 120 m, no excess
+
+        V_plug = (pi/4) * Dhole^2 * length
+               = (pi/4) * 0.2159^2 * 120
+               ~ 4.393 m^3
+    """
+    result = pa_plugs.design_pa_plug(0.2159, 120, purpose="P&A")
+    assert result["plug_volume_m3"] == pytest.approx(4.393, rel=1e-3)
+
+
+def test_design_pa_plug_meets_minimum_length_for_pa():
+    """P&A minimum is 100m; a 120m plug should pass."""
+    result = pa_plugs.design_pa_plug(0.2159, 120, purpose="P&A")
+    assert result["meets_minimum_length"] is True
+    assert result["recommended_length_m"] == 100.0
+
+
+def test_design_pa_plug_flags_under_length_pa_plug():
+    """A 50m P&A plug is below the 100m minimum and must be flagged."""
+    result = pa_plugs.design_pa_plug(0.2159, 50, purpose="P&A")
+    assert result["meets_minimum_length"] is False
+    assert "WARNING" in result["notes"]
+
+
+def test_design_pa_plug_side_track_minimum():
+    """Side-track minimum is 30m; a 35m plug should pass."""
+    result = pa_plugs.design_pa_plug(0.2159, 35, purpose="side_track")
+    assert result["meets_minimum_length"] is True
+    assert result["recommended_length_m"] == 30.0
+
+
+def test_design_pa_plug_suspension_minimum():
+    """Suspension minimum is 60m; a 55m plug should fail."""
+    result = pa_plugs.design_pa_plug(0.2159, 55, purpose="suspension")
+    assert result["meets_minimum_length"] is False
+    assert result["recommended_length_m"] == 60.0
+
+
+def test_design_pa_plug_default_purpose_is_pa():
+    """Calling without a purpose argument should default to 'P&A'."""
+    result = pa_plugs.design_pa_plug(0.2159, 120)
+    assert result["recommended_length_m"] == 100.0
+
+
+def test_design_pa_plug_excess_factor_increases_volume():
+    no_excess = pa_plugs.design_pa_plug(0.2159, 120, purpose="P&A", excess_factor=0.0)
+    with_excess = pa_plugs.design_pa_plug(0.2159, 120, purpose="P&A", excess_factor=0.15)
+    assert with_excess["plug_volume_m3"] > no_excess["plug_volume_m3"]
+    assert with_excess["plug_volume_m3"] == pytest.approx(no_excess["plug_volume_m3"] * 1.15, rel=1e-6)
+
+
+def test_design_pa_plug_rejects_invalid_purpose():
+    with pytest.raises(ValueError):
+        pa_plugs.design_pa_plug(0.2159, 50, purpose="not_a_real_purpose")
+
+
+def test_design_pa_plug_rejects_zero_hole_diameter():
+    with pytest.raises(ValueError):
+        pa_plugs.design_pa_plug(0, 50)
+
+
+def test_design_pa_plug_rejects_zero_plug_length():
+    with pytest.raises(ValueError):
+        pa_plugs.design_pa_plug(0.2159, 0)
+
+
+def test_design_pa_plug_rejects_negative_excess_factor():
+    with pytest.raises(ValueError):
+        pa_plugs.design_pa_plug(0.2159, 50, excess_factor=-0.1)

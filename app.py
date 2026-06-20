@@ -19,8 +19,7 @@ Course:     PENG 258 - Drilling Engineering 1
 
 import streamlit as st
 
-# NOTE: more imports will be added as Step 7 is implemented.
-from modules import mud_engine, hydraulics, cement_engine, cement_db
+from modules import mud_engine, hydraulics, cement_engine, cement_db, pa_plugs
 
 st.set_page_config(
     page_title="PyMudCement-Optima",
@@ -54,8 +53,10 @@ if page == "Home":
 
         Use the sidebar to navigate between modules.
 
-        **Status:** ✅ Mud Design, Hydraulics & ECD, Cementing Volumetrics, and
-        Additive Recommendation modules complete (Steps 1-6). P&A module in progress.
+        **Status:** ✅ All backend engineering modules complete (Steps 1-7):
+        mud design, hydraulics & ECD, cementing volumetrics, additive
+        recommendations, and plug/P&A design. Final GUI polish, validation,
+        and reporting in progress (Steps 8-10).
         """
     )
 
@@ -282,8 +283,72 @@ elif page == "Additive Recommendation":
 
 elif page == "Plug & P&A Design":
     st.header("Plug Bumping Pressure & P&A Design")
-    st.info("This section will be wired up in Step 7 (pa_plugs.py).")
-    # TODO: build input form -> call pa_plugs functions -> display results
+
+    st.subheader("Plug Bumping Pressure")
+    st.caption("Surface pressure expected when the top wiper plug lands on the float collar/shoe.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        disp_pressure = st.number_input("Displacement Pressure (Pa)", min_value=0.0, value=2_000_000.0, step=100_000.0)
+        friction_losses = st.number_input("Friction Losses (Pa)", min_value=0.0, value=500_000.0, step=50_000.0)
+        tvd_plug = st.number_input("TVD to Plug Landing Point (m)", min_value=0.0, value=3000.0, step=50.0)
+    with col2:
+        mud_density_inside = st.number_input("Mud/Cement Density Inside Casing (kg/m³)", min_value=0.1, value=1900.0, step=10.0)
+        displaced_density = st.number_input("Displaced Fluid Density in Annulus (kg/m³)", min_value=0.1, value=1250.0, step=10.0)
+
+    if st.button("Calculate Plug Bumping Pressure", type="primary"):
+        try:
+            bump_result = pa_plugs.calculate_plug_bumping_pressure(
+                displacement_pressure_pa=disp_pressure,
+                friction_losses_pa=friction_losses,
+                mud_density_kg_m3=mud_density_inside,
+                displaced_fluid_density_kg_m3=displaced_density,
+                tvd_m=tvd_plug,
+            )
+
+            b1, b2 = st.columns(2)
+            b1.metric("Plug Bumping Pressure", f"{bump_result['plug_bumping_pressure_pa']/1e6:.3f} MPa")
+            b2.metric("Hydrostatic Differential", f"{bump_result['hydrostatic_differential_pa']/1e6:.3f} MPa")
+
+            if bump_result["warning"]:
+                st.warning(bump_result["warning"])
+            else:
+                st.success("Plug bumping pressure is within a typical operational range.")
+
+        except ValueError as e:
+            st.error(f"Input error: {e}")
+
+    st.divider()
+    st.subheader("Cement Plug Design (Side-Track / Suspension / P&A)")
+
+    col3, col4 = st.columns(2)
+    with col3:
+        hole_d_plug = st.number_input("Open Hole Diameter (m)", min_value=0.01, value=0.2159, step=0.001, format="%.4f")
+        plug_length = st.number_input("Designed Plug Length (m)", min_value=0.1, value=120.0, step=5.0)
+    with col4:
+        purpose = st.selectbox("Plug Purpose", ["P&A", "suspension", "side_track"])
+        excess_factor_plug = st.number_input("Excess Factor", min_value=0.0, value=0.0, step=0.05, format="%.2f")
+
+    if st.button("Design Plug"):
+        try:
+            plug_result = pa_plugs.design_pa_plug(
+                hole_diameter_m=hole_d_plug,
+                plug_length_m=plug_length,
+                purpose=purpose,
+                excess_factor=excess_factor_plug,
+            )
+
+            p1, p2 = st.columns(2)
+            p1.metric("Plug Volume", f"{plug_result['plug_volume_m3']:.3f} m³")
+            p2.metric("Minimum Recommended Length", f"{plug_result['recommended_length_m']:.0f} m")
+
+            if plug_result["meets_minimum_length"]:
+                st.success(plug_result["notes"])
+            else:
+                st.error(plug_result["notes"])
+
+        except ValueError as e:
+            st.error(f"Input error: {e}")
 
 elif page == "Job Procedure Report":
     st.header("Digital Cementing Job Procedure Sheet")
