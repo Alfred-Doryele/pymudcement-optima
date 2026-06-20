@@ -349,8 +349,181 @@ elif page == "Plug & P&A Design":
 
         except ValueError as e:
             st.error(f"Input error: {e}")
-
 elif page == "Job Procedure Report":
     st.header("Digital Cementing Job Procedure Sheet")
-    st.info("This section generates the downloadable report (Milestone 2 / Step 8).")
-    # TODO: aggregate results from all modules -> generate PDF/printable report
+    st.caption("Consolidates mud design, hydraulics, cementing volumes, additives, and plug bumping pressure into one printable job sheet.")
+
+    st.subheader("1. Well & Job Header")
+    h1, h2, h3 = st.columns(3)
+    with h1:
+        well_name = st.text_input("Well Name", value="Well-A1")
+        job_date = st.date_input("Job Date")
+    with h2:
+        tvd_report = st.number_input("TVD (m)", min_value=0.1, value=3000.0, step=50.0, key="rpt_tvd")
+        bht_report = st.number_input("Bottom Hole Temperature, BHT (°C)", min_value=0.0, value=110.0, step=5.0, key="rpt_bht")
+    with h3:
+        prepared_by = st.text_input("Prepared By", value="")
+        approved_by = st.text_input("Approved By (Supervisor)", value="")
+
+    st.divider()
+    st.subheader("2. Mud Design Parameters")
+    m1, m2 = st.columns(2)
+    with m1:
+        rpt_mud_density = st.number_input("Mud Density (kg/m³)", min_value=0.1, value=1250.0, step=10.0, key="rpt_mud")
+        rpt_pore_pressure = st.number_input("Pore Pressure Gradient (kg/m³ EMW)", min_value=0.1, value=1150.0, step=10.0, key="rpt_pp")
+        rpt_fracture_gradient = st.number_input("Fracture Gradient (kg/m³ EMW)", min_value=0.1, value=1450.0, step=10.0, key="rpt_fg")
+    with m2:
+        rpt_pv_cp = st.number_input("Plastic Viscosity, PV (cP)", min_value=0.0, value=20.0, step=1.0, key="rpt_pv")
+        rpt_yp_lb = st.number_input("Yield Point, YP (lb/100ft²)", min_value=0.0, value=15.0, step=1.0, key="rpt_yp")
+        rpt_shear_rate = st.number_input("Shear Rate (s⁻¹)", min_value=0.0, value=100.0, step=10.0, key="rpt_sr")
+
+    st.divider()
+    st.subheader("3. Hydraulics & Cementing Geometry")
+    st.caption("Note: hydraulics uses the open hole / drill pipe annulus; cementing uses the open hole / casing annulus for the casing string being run.")
+    g1, g2 = st.columns(2)
+    with g1:
+        rpt_hole_d = st.number_input("Open Hole Diameter (m)", min_value=0.01, value=0.31115, step=0.001, format="%.5f", key="rpt_hole")
+        rpt_pipe_od = st.number_input("Drill Pipe OD (m)", min_value=0.01, value=0.127, step=0.001, format="%.4f", key="rpt_pipe")
+        rpt_flow_rate = st.number_input("Flow Rate (L/min)", min_value=1.0, value=300.0, step=10.0, key="rpt_flow")
+    with g2:
+        rpt_casing_od = st.number_input("Casing OD (m)", min_value=0.01, value=0.24448, step=0.001, format="%.5f", key="rpt_cod")
+        rpt_casing_id = st.number_input("Casing ID (m)", min_value=0.01, value=0.22049, step=0.001, format="%.5f", key="rpt_cid")
+        rpt_cement_length = st.number_input("Cemented Interval Length (m)", min_value=0.0, value=500.0, step=10.0, key="rpt_clen")
+
+    if st.button("Generate Job Procedure Sheet", type="primary"):
+        try:
+            # --- Run all calculations ---
+            p_hyd = mud_engine.calculate_hydrostatic_pressure(rpt_mud_density, tvd_report)
+            window_result = mud_engine.check_safe_mud_window(rpt_mud_density, rpt_pore_pressure, rpt_fracture_gradient)
+            rheology = mud_engine.parse_mud_report({"PV": rpt_pv_cp, "YP": rpt_yp_lb})
+            tau = mud_engine.calculate_shear_stress(rheology["YP_pa"], rheology["PV_pa_s"], rpt_shear_rate)
+
+            flow_rate_m3_s = rpt_flow_rate / 60000
+            dp_result = hydraulics.calculate_annular_pressure_drop(
+                plastic_viscosity_pa_s=rheology["PV_pa_s"],
+                yield_point_pa=rheology["YP_pa"],
+                flow_rate_m3_s=flow_rate_m3_s,
+                hole_diameter_m=rpt_hole_d,
+                pipe_od_m=rpt_pipe_od,
+                length_m=tvd_report,
+                mud_density_kg_m3=rpt_mud_density,
+            )
+            ecd_result = hydraulics.calculate_ecd(
+                rpt_mud_density, dp_result["pressure_drop_pa"], tvd_report, rpt_fracture_gradient
+            )
+
+            v_ann = cement_engine.calculate_annular_volume(rpt_hole_d, rpt_casing_od, rpt_cement_length)
+            slurry = cement_engine.calculate_slurry_volumes(v_ann, 0.6, 0.4)
+            v_disp = cement_engine.calculate_displacement_volume(rpt_casing_id, tvd_report)
+
+            additive_rec = cement_db.recommend_additives(bht_report)
+
+            bump_result = pa_plugs.calculate_plug_bumping_pressure(
+                displacement_pressure_pa=2_000_000,
+                friction_losses_pa=dp_result["pressure_drop_pa"],
+                mud_density_kg_m3=rpt_mud_density,
+                displaced_fluid_density_kg_m3=rpt_mud_density,
+                tvd_m=tvd_report,
+            )
+
+            # --- Display on-screen summary ---
+            st.success("Job procedure sheet generated successfully.")
+
+            st.subheader("📋 Summary")
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Hydrostatic Pressure", f"{p_hyd/1e6:.2f} MPa")
+            d2.metric("ECD", f"{ecd_result['ecd_kg_m3']:.1f} kg/m³")
+            d3.metric("Plug Bumping Pressure", f"{bump_result['plug_bumping_pressure_pa']/1e6:.2f} MPa")
+
+            d4, d5, d6 = st.columns(3)
+            d4.metric("Annular Cement Volume", f"{v_ann:.2f} m³")
+            d5.metric("Displacement Volume", f"{v_disp:.2f} m³")
+            d6.metric("Recommended Additive", additive_rec["recommended_additive"])
+
+            if not window_result["is_safe"]:
+                st.error(f"⚠️ Mud Weight Check: {window_result['message']}")
+            else:
+                st.info(f"Mud Weight Check: {window_result['message']}")
+
+            # --- Generate PDF ---
+            from fpdf import FPDF
+
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 16)
+            pdf.cell(0, 10, "Cementing Job Procedure Sheet", ln=True, align="C")
+            pdf.set_font("Helvetica", "", 10)
+            pdf.cell(0, 6, "PyMudCement-Optima | PENG 258 Capstone Project", ln=True, align="C")
+            pdf.ln(4)
+
+            def section(title):
+                pdf.set_font("Helvetica", "B", 12)
+                pdf.set_fill_color(220, 230, 240)
+                pdf.cell(0, 8, title, ln=True, fill=True)
+                pdf.set_font("Helvetica", "", 10)
+
+            def row(label, value):
+                pdf.cell(95, 6, str(label), border=0)
+                pdf.cell(95, 6, str(value), border=0, ln=True)
+
+            section("Well & Job Header")
+            row("Well Name:", well_name)
+            row("Job Date:", str(job_date))
+            row("TVD:", f"{tvd_report:.1f} m")
+            row("Bottom Hole Temperature:", f"{bht_report:.1f} C")
+            row("Prepared By:", prepared_by or "-")
+            row("Approved By:", approved_by or "-")
+            pdf.ln(2)
+
+            section("Mud Design")
+            row("Mud Density:", f"{rpt_mud_density:.1f} kg/m3")
+            row("Hydrostatic Pressure:", f"{p_hyd/1e6:.3f} MPa")
+            row("Safe Window Status:", window_result["status"])
+            row("PV (converted):", f"{rheology['PV_pa_s']:.4f} Pa.s")
+            row("YP (converted):", f"{rheology['YP_pa']:.3f} Pa")
+            row("Shear Stress:", f"{tau:.3f} Pa")
+            row("Fluid Classification:", rheology["fluid_type"])
+            pdf.ln(2)
+
+            section("Hydraulics & ECD")
+            row("Annular Velocity:", f"{dp_result['annular_velocity_m_s']:.3f} m/s")
+            row("Annular Pressure Drop:", f"{dp_result['pressure_drop_pa']/1e3:.1f} kPa")
+            row("Flow Regime:", dp_result["flow_regime"])
+            row("ECD:", f"{ecd_result['ecd_kg_m3']:.1f} kg/m3")
+            pdf.ln(2)
+
+            section("Cementing Volumes")
+            row("Annular Cement Volume:", f"{v_ann:.3f} m3")
+            row("Lead Slurry Volume:", f"{slurry['lead_volume_m3']:.3f} m3")
+            row("Tail Slurry Volume:", f"{slurry['tail_volume_m3']:.3f} m3")
+            row("Displacement Volume:", f"{v_disp:.3f} m3")
+            pdf.ln(2)
+
+            section("Additive Recommendation")
+            row("Recommended Additive:", additive_rec["recommended_additive"])
+            row("Estimated Pump Time:", f"{additive_rec['estimated_pump_time_min']:.0f} min")
+            row("Typical Dosage:", additive_rec["typical_dosage_percent"])
+            pdf.ln(2)
+
+            section("Plug Bumping Pressure")
+            row("Plug Bumping Pressure:", f"{bump_result['plug_bumping_pressure_pa']/1e6:.3f} MPa")
+            if bump_result["warning"]:
+                pdf.set_text_color(200, 0, 0)
+                pdf.multi_cell(0, 6, f"WARNING: {bump_result['warning']}")
+                pdf.set_text_color(0, 0, 0)
+            pdf.ln(4)
+
+            pdf.set_font("Helvetica", "I", 9)
+            pdf.cell(0, 6, "Signature (Prepared By): _______________________     Signature (Approved By): _______________________", ln=True)
+
+            pdf_bytes = bytes(pdf.output())
+
+            st.download_button(
+                label="📄 Download Job Procedure Sheet (PDF)",
+                data=pdf_bytes,
+                file_name=f"job_procedure_sheet_{well_name.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+            )
+
+        except ValueError as e:
+            st.error(f"Input error: {e}")
