@@ -145,7 +145,7 @@ pytest tests/ -v
 - [x] **Step 6:** Additive database & slurry design
 - [x] **Step 7:** Plug bumping pressure & P&A module
 - [ ] **Step 8:** Streamlit GUI integration (final polish)
-- [ ] **Step 9:** Validation against benchmark data
+- [x] **Step 9:** Validation against benchmark data Validation against benchmark data
 - [ ] **Step 10:** Final testing, demo prep, technical report
 
 ---
